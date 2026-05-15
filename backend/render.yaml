@@ -4,6 +4,7 @@ services:
     runtime: python
     plan: free
     region: oregon
+    repo: https://github.com/Eeshu-Yadav/notes-app-epify
     branch: main
     rootDir: backend
     buildCommand: "./build.sh"
