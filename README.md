@@ -13,9 +13,13 @@ tagging, search, and public read-only share links.
 
 | | URL |
 |---|---|
-| Frontend | `<TBD>` |
-| Backend API | `<TBD>` |
-| API docs | `<TBD>/docs/` |
+| **Backend API (submit this)** | https://notes-app-76mt.onrender.com |
+| Frontend | https://notes-app-epify.vercel.app |
+| API docs (Swagger UI) | https://notes-app-76mt.onrender.com/docs/ |
+| OpenAPI schema (JSON) | https://notes-app-76mt.onrender.com/openapi.json |
+| About | https://notes-app-76mt.onrender.com/about |
+
+> Note: Render's free tier sleeps after inactivity. The first request after idle takes ~30s to wake the service.
 
 ## Run locally
 

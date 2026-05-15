@@ -2,6 +2,8 @@
 
 Django 5 + DRF + SimpleJWT REST API for the Notes App assignment.
 
+**Live**: https://notes-app-76mt.onrender.com — try `/about`, `/openapi.json`, `/docs/`.
+
 ## Setup
 
 ```bash
