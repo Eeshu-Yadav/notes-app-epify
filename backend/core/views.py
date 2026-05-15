@@ -1,5 +1,5 @@
 from django.db.models import Q
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -11,9 +11,13 @@ from notes.serializers import NoteSerializer
 
 class AboutView(APIView):
     permission_classes = [AllowAny]
-    authentication_classes: list = []
+    authentication_classes = []
 
-    @extend_schema(summary="About this service", tags=["meta"])
+    @extend_schema(
+        summary="About this service",
+        responses={200: OpenApiResponse(description="Service identity and custom-feature list")},
+        tags=["meta"],
+    )
     def get(self, request):
         return Response({
             "name": "Eeshu Yadav",
@@ -29,8 +33,13 @@ class AboutView(APIView):
 
 class HealthView(APIView):
     permission_classes = [AllowAny]
-    authentication_classes: list = []
+    authentication_classes = []
 
+    @extend_schema(
+        summary="Liveness probe",
+        responses={200: OpenApiResponse(description="Service is healthy")},
+        tags=["meta"],
+    )
     def get(self, request):
         return Response({"status": "ok"})
 
@@ -39,9 +48,11 @@ class SearchView(APIView):
     """Full-text search across title, content, and tag names for notes the user can access."""
 
     permission_classes = [IsAuthenticated]
+    serializer_class = NoteSerializer  # for schema introspection
 
     @extend_schema(
         parameters=[OpenApiParameter("q", str, required=True, description="Search keyword")],
+        responses={200: OpenApiResponse(description="Matching notes with query echo and count")},
         summary="Full-text search across user's notes",
         tags=["notes"],
     )

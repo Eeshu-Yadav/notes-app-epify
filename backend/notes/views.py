@@ -1,14 +1,13 @@
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
 from django.db.models import Q
-from django.utils import timezone
-from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
-from rest_framework import generics, permissions, status, viewsets
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Note, NoteShare, PublicShareLink, Tag
+from .models import Note, NoteShare, PublicShareLink, Tag, _generate_token
 from .permissions import IsOwnerOrSharedReadOnly
 from .serializers import (
     NoteShareInputSerializer,
@@ -21,11 +20,31 @@ from .serializers import (
 User = get_user_model()
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List notes (owned + shared) with filters & pagination",
+        tags=["notes"],
+        parameters=[
+            OpenApiParameter("page", int, description="Page number"),
+            OpenApiParameter("page_size", int, description="Items per page (max 100)"),
+            OpenApiParameter("pinned", str, description="true / false"),
+            OpenApiParameter("archived", str, description="true / false (default false)"),
+            OpenApiParameter("color", str, description="Filter by color label"),
+            OpenApiParameter("tag", str, description="Filter by tag name"),
+        ],
+    ),
+    retrieve=extend_schema(summary="Get a note by id (owner or shared user)", tags=["notes"]),
+    create=extend_schema(summary="Create a new note", tags=["notes"]),
+    update=extend_schema(summary="Update a note (full)", tags=["notes"]),
+    partial_update=extend_schema(summary="Update a note (partial)", tags=["notes"]),
+    destroy=extend_schema(summary="Delete a note (owner only)", tags=["notes"]),
+)
 class NoteViewSet(viewsets.ModelViewSet):
     """CRUD for notes. Owner has full access; shared users can read (or edit if granted)."""
 
     serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated, IsOwnerOrSharedReadOnly]
+    queryset = Note.objects.none()
     lookup_value_regex = r"[0-9a-f-]{36}"
 
     def get_queryset(self):
@@ -34,60 +53,24 @@ class NoteViewSet(viewsets.ModelViewSet):
             Q(owner=user) | Q(shares__user=user)
         ).distinct().prefetch_related("tags", "shares__user").select_related("owner")
 
-        pinned = self.request.query_params.get("pinned")
-        if pinned in ("true", "1"):
+        params = self.request.query_params
+        if params.get("pinned") in ("true", "1"):
             qs = qs.filter(is_pinned=True)
-        elif pinned in ("false", "0"):
+        elif params.get("pinned") in ("false", "0"):
             qs = qs.filter(is_pinned=False)
 
-        archived = self.request.query_params.get("archived")
+        archived = params.get("archived")
         if archived in ("true", "1"):
             qs = qs.filter(is_archived=True)
-        elif archived in ("false", "0", None, ""):
+        else:
             qs = qs.filter(is_archived=False)
 
-        color = self.request.query_params.get("color")
-        if color:
+        if color := params.get("color"):
             qs = qs.filter(color=color)
-
-        tag = self.request.query_params.get("tag")
-        if tag:
+        if tag := params.get("tag"):
             qs = qs.filter(tags__name__iexact=tag.strip().lower())
-
         return qs
 
-    @extend_schema(
-        parameters=[
-            OpenApiParameter("page", int, description="Page number for pagination"),
-            OpenApiParameter("page_size", int, description="Items per page (max 100)"),
-            OpenApiParameter("pinned", str, description="Filter: true/false"),
-            OpenApiParameter("archived", str, description="Filter: true/false (default false)"),
-            OpenApiParameter("color", str, description="Filter by color label"),
-            OpenApiParameter("tag", str, description="Filter by tag name"),
-        ],
-        summary="List notes (owned + shared) with filters & pagination",
-        tags=["notes"],
-    )
-    def list(self, request, *args, **kwargs):
-        return super().list(request, *args, **kwargs)
-
-    @extend_schema(summary="Get a note by id (owner or shared user)", tags=["notes"])
-    def retrieve(self, request, *args, **kwargs):
-        return super().retrieve(request, *args, **kwargs)
-
-    @extend_schema(summary="Create a new note", tags=["notes"])
-    def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
-
-    @extend_schema(summary="Update a note (full)", tags=["notes"])
-    def update(self, request, *args, **kwargs):
-        return super().update(request, *args, **kwargs)
-
-    @extend_schema(summary="Update a note (partial)", tags=["notes"])
-    def partial_update(self, request, *args, **kwargs):
-        return super().partial_update(request, *args, **kwargs)
-
-    @extend_schema(summary="Delete a note (owner only)", tags=["notes"])
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         if instance.owner_id != request.user.id:
@@ -119,26 +102,20 @@ class NoteViewSet(viewsets.ModelViewSet):
         except User.DoesNotExist:
             return Response({"detail": "User with that email does not exist."},
                             status=status.HTTP_404_NOT_FOUND)
+        can_edit = serializer.validated_data.get("can_edit", False)
         share, created = NoteShare.objects.get_or_create(
-            note=note,
-            user=target,
-            defaults={
-                "shared_by": request.user,
-                "can_edit": serializer.validated_data.get("can_edit", False),
-            },
+            note=note, user=target,
+            defaults={"shared_by": request.user, "can_edit": can_edit},
         )
         if not created:
-            share.can_edit = serializer.validated_data.get("can_edit", share.can_edit)
-            share.save()
-        return Response(
-            {
-                "message": f"Note shared with {target.email}",
-                "share_with_email": target.email,
-                "can_edit": share.can_edit,
-                "already_shared": not created,
-            },
-            status=status.HTTP_200_OK,
-        )
+            share.can_edit = can_edit
+            share.save(update_fields=["can_edit"])
+        return Response({
+            "message": f"Note shared with {target.email}",
+            "share_with_email": target.email,
+            "can_edit": share.can_edit,
+            "already_shared": not created,
+        })
 
     @extend_schema(
         responses={200: OpenApiResponse(description="Sharing revoked")},
@@ -164,7 +141,7 @@ class NoteViewSet(viewsets.ModelViewSet):
     @extend_schema(
         responses={201: PublicShareLinkSerializer, 200: PublicShareLinkSerializer,
                    204: OpenApiResponse(description="Public link revoked")},
-        summary="Create/rotate (POST) or revoke (DELETE) a public share link for a note",
+        summary="Create/rotate (POST) or revoke (DELETE) a public share link",
         tags=["public-share"],
     )
     @action(detail=True, methods=["post", "delete"], url_path="public-link")
@@ -176,12 +153,10 @@ class NoteViewSet(viewsets.ModelViewSet):
         if request.method == "DELETE":
             PublicShareLink.objects.filter(note=note).delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
-        expires_at = request.data.get("expires_at") or None
         link, created = PublicShareLink.objects.get_or_create(note=note)
         if not created:
-            from .models import _generate_token
             link.token = _generate_token()
-        link.expires_at = expires_at or None
+        link.expires_at = request.data.get("expires_at") or None
         link.save()
         return Response(
             PublicShareLinkSerializer(link).data,
@@ -202,7 +177,7 @@ class NoteViewSet(viewsets.ModelViewSet):
 
 class TagListView(generics.ListAPIView):
     serializer_class = TagSerializer
-    permission_classes = [IsAuthenticated]
+    queryset = Tag.objects.none()
 
     def get_queryset(self):
         return Tag.objects.filter(owner=self.request.user)
@@ -213,17 +188,15 @@ class PublicNoteView(generics.RetrieveAPIView):
 
     permission_classes = [AllowAny]
     serializer_class = PublicNoteSerializer
-    authentication_classes: list = []
+    authentication_classes = []
 
     def get_object(self):
         token = self.kwargs.get("token", "")
         try:
             link = PublicShareLink.objects.select_related("note__owner").get(token=token)
         except PublicShareLink.DoesNotExist:
-            from rest_framework.exceptions import NotFound
             raise NotFound("Public link not found or revoked.")
         if link.is_expired():
-            from rest_framework.exceptions import NotFound
             raise NotFound("This public link has expired.")
         PublicShareLink.objects.filter(pk=link.pk).update(view_count=link.view_count + 1)
         return link.note

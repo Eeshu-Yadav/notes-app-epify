@@ -1,12 +1,10 @@
-from django.urls import path
+from django.urls import re_path
 
 from .views import AboutView, HealthView, SearchView
 
 urlpatterns = [
-    path("about", AboutView.as_view(), name="about"),
-    path("about/", AboutView.as_view()),
-    path("search", SearchView.as_view(), name="search"),
-    path("search/", SearchView.as_view()),
-    path("health", HealthView.as_view(), name="health"),
-    path("", HealthView.as_view()),  # root → 200 ok (avoids confusing 404 in browsers)
+    re_path(r"^about/?$", AboutView.as_view(), name="about"),
+    re_path(r"^search/?$", SearchView.as_view(), name="search"),
+    re_path(r"^health/?$", HealthView.as_view(), name="health"),
+    re_path(r"^$", HealthView.as_view()),
 ]

@@ -1,6 +1,4 @@
 """Django settings for the Notes App backend."""
-from __future__ import annotations
-
 import os
 from datetime import timedelta
 from pathlib import Path

@@ -1,12 +1,9 @@
-from django.urls import path
+from django.urls import re_path
 
 from .views import LoginView, MeView, RegisterView
 
 urlpatterns = [
-    path("register", RegisterView.as_view(), name="register"),
-    path("register/", RegisterView.as_view()),
-    path("login", LoginView.as_view(), name="login"),
-    path("login/", LoginView.as_view()),
-    path("me", MeView.as_view(), name="me"),
-    path("me/", MeView.as_view()),
+    re_path(r"^register/?$", RegisterView.as_view(), name="register"),
+    re_path(r"^login/?$", LoginView.as_view(), name="login"),
+    re_path(r"^me/?$", MeView.as_view(), name="me"),
 ]

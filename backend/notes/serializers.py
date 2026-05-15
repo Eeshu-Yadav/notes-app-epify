@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import COLOR_CHOICES, Note, NoteShare, PublicShareLink, Tag
+from .models import COLOR_CHOICES, Note, PublicShareLink, Tag
 
 User = get_user_model()
 
@@ -36,14 +36,14 @@ class NoteSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "owner_email", "shared_with", "is_owner",
                             "public_link", "tags_detail", "created_at", "updated_at")
 
-    def get_shared_with(self, obj):
+    def get_shared_with(self, obj) -> list[str]:
         return [s.user.email for s in obj.shares.all().select_related("user")]
 
-    def get_is_owner(self, obj):
+    def get_is_owner(self, obj) -> bool:
         request = self.context.get("request")
         return bool(request and request.user.is_authenticated and obj.owner_id == request.user.id)
 
-    def get_public_link(self, obj):
+    def get_public_link(self, obj) -> dict | None:
         link = getattr(obj, "public_link", None)
         if link is None:
             return None
@@ -110,7 +110,7 @@ class PublicShareLinkSerializer(serializers.ModelSerializer):
         fields = ("token", "expires_at", "view_count", "public_url_path", "created_at")
         read_only_fields = ("token", "view_count", "public_url_path", "created_at")
 
-    def get_public_url_path(self, obj):
+    def get_public_url_path(self, obj) -> str:
         return f"/public/notes/{obj.token}"
 
 
